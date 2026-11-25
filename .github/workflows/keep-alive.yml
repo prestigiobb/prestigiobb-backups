@@ -1,0 +1,39 @@
+name: Latido de Supabase y del repo
+
+on:
+  schedule:
+    - cron: '17 3,15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cliente de Postgres
+        run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+
+      - name: Latido en Supabase (escritura mínima con el rol sin permisos)
+        env:
+          DATABASE_URL: ${{ secrets.KEEPALIVE_DB_URL }}
+        run: bash scripts/latido-supabase.sh
+
+      - name: Commit de latido (GitHub apaga los cron de un repo público a los 60 días sin commits)
+        if: always()
+        run: |
+          date -u +%F > latido.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latido.txt
+          if git diff --cached --quiet; then echo "El latido de hoy ya estaba."; exit 0; fi
+          git commit -q -m "chore: latido $(date -u +%F)"
+          git push -q
